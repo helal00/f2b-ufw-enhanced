@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+_srcsbinpath=$(dirname $(readlink -f $0))
+_dbfile="$1"
+_storedir=$(dirname $_dbfile)
+_isignoreip="$2"
+_ignoreipcommand="$3"
+_manualblocklist="$4"
+_maxtopermanent="$5"
+_ipnotactivetime="$6"
+_cleanipwithban="$7"
+_badipscom="$8"
+_badipscomcat="$9"
+_badipscomscore="${10}"
+_badipscomintval="${11}"
+_usebadipscomkey="${12}"
+_badipscomkeyscore="${13}"
+_badipscomkeyprefix="${14}"
+_action="${15}"
+_insertpos="${16}"
+_blocktype="${17}"
+_ip="${18}"
+_destination="${19}"
+_app="${20}"
+_port="${21}"
+_protocol="${22}"
+
+
+#echo "I am running.......no worries..." > "$_srcsbinpath/testip.log"
+
+if [ -z "$_ip" ] ; then
+	echo "No ip given." 1>&2
+	exit 1
+fi
+
+if [ "$_isignoreip" -eq 1 ] && [ -f "$_srcsbinpath/iptoignore" ] ; then
+	if "$_ignoreipcommand" "$_ip" ; then
+		exit 0
+	fi
+fi
+
+function strtoarry(){
+	local _str _retarray _deli _c _l;_str=$1 _retarray=$2 _deli=$3
+	eval unset $_retarray
+	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo $_str | sed -e "s/$_deli/\n/g")"
+}
+
+function isposint(){
+	local _val
+	_val=$1
+	if [ -n "$_val" ] && echo "$_val" | grep -q "^-\?[0-9]*$" && [ "$_val" -ge 0 ] ; then
+		return 0
+	fi
+	return 1
+}
+
+function replaceline(){
+	local _pattern _replace _file
+	_pattern=$1
+	_replace=$2
+	_file=$3
+	sed -i "/$_pattern/ { c \
+	$_replace
+	}" "$_file"
+}
+
+function join { local IFS="$1"; shift; echo "$*"; }
+
+function trimStr(){
+	local _deli _deli2 _strtotrim
+	if [ "$#" -eq 0 ] ; then
+		return 1
+	elif [ "$#" -eq 1 ] ; then
+		_deli=" "
+		_deli2=" "
+		_strtotrim="$*"
+	elif [ "$#" -eq 2 ] ; then
+		_deli="$1"
+		_deli2="$1"
+		shift
+		_strtotrim="$*"
+	elif [ "$#" -gt 2 ] ; then
+		_deli="$1"
+		shift
+		_deli2="$1"
+		shift
+		_strtotrim="$*"
+	fi
+	_strtotrim="${_strtotrim/#$_deli}"
+	_strtotrim="${_strtotrim/%$_deli2}"
+	echo "$_strtotrim"
+}
+
+function fetchBadips(){
+	local _filestore _tempfilestore _dbname _cat _score _interval _key _response
+	_filestore=$1 _tempstore=$2 _dbname=$3 _cat=$4 _score=$5 _interval=$6 _key=$7
+	if [ ! -f "$_filestore/$_dbname" ] || [ $(expr $(date +%s) - $(stat -c %Y "$_filestore/$_dbname")) -gt "$_interval" ] ; then
+		mkdir -p "$_filestore" "$_tempstore"
+		_response=$(wget https://www.badips.com/get/list/"$_cat"/"${_score}${_key}" -O "${_tempstore}/$_dbname" 2>&1 | grep "HTTP request sent, awaiting response")
+		if echo "$_response" | grep -q "200 OK" && [ -f "${_tempstore}/$_dbname" ] ; then
+			mv -f "${_tempstore}/$_dbname" "$_filestore/$_dbname"
+		else
+			rm -f "${_tempbadipskeystore}/badips.db"
+		fi
+	fi
+}
+
+#if [ ! -f "$_srcsbinpath/ufwcustomconf.conf" ] ; then
+#echo "_maxtopermanent=0" >> "$_srcsbinpath/ufwcustomconf.conf"
+#echo "_bancounttoreport=0" >> "$_srcsbinpath/ufwcustomconf.conf"
+#echo "_ufwbinpath=$(command -v ufw)" >> "$_srcsbinpath/ufwcustomconf.conf"
+#fi
+
+#. "$_srcsbinpath/ufwcustomconf.conf"
+
+#if [ ! -f "$_ufwbinpath" ] ; then
+_ufwbinpath=$(command -v ufw)
+#fi
+
+if [ ! -f "$_dbfile" ] ; then
+mkdir -p "$_storedir"
+touch "$_dbfile"
+fi
+
+if [ ! -z "$_manualblocklist" ] && [ ! -f "$_manualblocklist" ] ; then
+touch "$_manualblocklist"
+fi
+
+if [ ! -z "$_app" ] ; then
+	_app=" app $_app"
+fi
+
+if [ ! -z "$_protocol" ] ; then
+	_protocol=" proto $_protocol"
+fi
+if [ ! -z "$_port" ] ; then
+	_protocol=" port $_port"
+fi
+
+_myhostip=""
+if [ ! -f "$_storedir/myhostip" ] ; then
+	_myhostip="$(ip route get 1 | awk '{print $NF;exit}')"
+	echo "$_myhostip" > "$_storedir/myhostip"
+else
+	_myhostip=$(cat "$_storedir/myhostip")
+fi
+
+
+if [ "$_action" = "insert" ] ; then
+	if [ ! -z "$_app" ] ; then
+		$_ufwbinpath $_action $_insertpos $_blocktype from $_ip to $_destination$_app
+	else
+		$_ufwbinpath $_action $_insertpos $_blocktype$_protocol from $_ip to $_destination$_port 
+	fi
+	
+	if [ ! -z "$_badipscomintval" ] ; then
+		_badipscomintval=$((_badipscomintval*60))
+	fi
+	
+	_ipinblacklist=""
+	
+	if [ -f "$_manualblocklist" ] ; then
+		if grep -q "$_ip" "$_manualblocklist" ; then
+			_ipinblacklist="$_ip"
+		fi
+	fi
+	
+	if [ -z "$_ipinblacklist" ] && [ "$_usebadipscomkey" -eq 1 ] && [ ! -z "$_badipscomkeyprefix" ]; then
+		_badipskey=""
+		_badipskeyfile="${_badipscomkeyprefix}${_myhostip//./-}"
+		if [ -f "$_badipskeyfile" ] ; then
+			_badipskey=$(cat "$_badipskeyfile")
+		else
+			_keyjson=$(wget https://www.badips.com/get/key -qO -)
+			_keystring=$(echo "$_keyjson" | jq '.key')
+			if [ ! -z "$_keystring" ] ; then
+				_badipskey=$(trimStr "\"" "$_keystring")
+				echo "$_badipskey" > "$_badipskeyfile"
+			fi
+		fi
+		
+		if [ ! -z "$_badipskey" ] ; then
+			_badipskey="?key=${_badipskey}"
+			_badipskeyfilesstore="${_storedir}/badipscom/key/${_badipscomcat}/${_badipscomkeyscore}"
+			_tempbadipskeystore="/tmp/badipscom/key/${_badipscomcat}/${_badipscomkeyscore}"
+			fetchBadips "$_badipskeyfilesstore" "$_tempbadipskeystore" "badips.db" "$_badipscomcat" "$_badipscomkeyscore" "$_badipscomintval" "$_badipskey"
+			if [ -f "$_badipskeyfilesstore/badips.db" ] ; then
+				if grep -q "$_ip" "$_badipskeyfilesstore/badips.db" ; then
+					_ipinblacklist="$_ip"
+				fi
+			fi
+		fi
+	fi
+	
+	if [ -z "$_ipinblacklist" ] && [ "$_badipscom" -eq 1 ] ; then
+		_badipsfilesstore="${_storedir}/badipscom/${_badipscomcat}/${_badipscomscore}"
+		_tempbadipsstore="/tmp/badipscom/${_badipscomcat}/${_badipscomscore}"
+		
+		fetchBadips "$_badipsfilesstore" "$_tempbadipsstore" "badips.db" "$_badipscomcat" "$_badipscomscore" "$_badipscomintval"
+		
+		if [ -f "$_badipsfilesstore/badips.db" ] ; then
+			if grep -q "$_ip" "$_badipsfilesstore/badips.db" ; then
+				_ipinblacklist="$_ip"
+			fi
+		fi
+	fi
+	
+
+	if [ $? -eq 0 ] ; then
+		_ipline=$(grep "$_ip" "$_dbfile")
+		if [ ! -z "$_ipline" ] ; then
+			#_cparts=($(echo "$_ipline" | tr "|" " " ))
+			strtoarry "$_ipline" "_cparts" '|'
+			if [ ${#_cparts[@]} -eq 1 ] ; then
+				if [ ! -z "$_ipinblacklist" ] ; then
+					replaceline "$_ip" "$_ip|$((_maxtopermanent+1))|$(date)" "$_dbfile"
+				else
+					replaceline "$_ip" "$_ip|2|$(date)" "$_dbfile"
+				fi
+			elif [ ${#_cparts[@]} -ge 2 ] ; then
+				_counts=${_cparts[1]}
+				if isposint $_counts ; then
+					_counts=$((_counts+1))
+					if [ ! -z "$_ipinblacklist" ] ; then
+						replaceline "$_ip" "$_ip|$((_maxtopermanent+_counts))|$(date)" "$_dbfile"
+					else
+						replaceline "$_ip" "$_ip|$_counts|$(date)" "$_dbfile"
+					fi
+				else
+					if [ ! -z "$_ipinblacklist" ] ; then
+						replaceline "$_ip" "$_ip|$((_maxtopermanent+1))|$(date)" "$_dbfile"
+					else
+						replaceline "$_ip" "$_ip|2|$(date)" "$_dbfile"
+					fi	
+				fi
+			fi	
+		else
+			if [ ! -z "$_ipinblacklist" ] ; then
+				echo "$_ip|$_maxtopermanent|$(date)" >> "$_dbfile"
+			else
+				echo "$_ip|1|$(date)" >> "$_dbfile"
+			fi
+		fi
+	fi
+	
+elif [ "$_action" = "delete" ] ; then
+	_unban=0
+	
+	if isposint $_maxtopermanent && [ $_maxtopermanent -gt 0 ] ; then
+		if [ -f "$_dbfile" ] ; then
+		_ipline=$(grep "$_ip" "$_dbfile")
+			if [ ! -z "$_ipline" ] ; then
+				if [ ! "${_ipline:0:1}" = "#" ] ; then
+					#_cparts=($(echo "$_ipline" | tr "|" " " ))
+					strtoarry "$_ipline" "_cparts" '|'
+					if [ ${#_cparts[@]} -eq 1 ] ; then
+						if [ "$_maxtopermanent" -eq 1 ] ; then
+							_unban=1
+						fi
+					elif [ ${#_cparts[@]} -ge 2 ] ; then
+						_counts=${_cparts[1]}
+						if isposint $_counts ; then
+							_counts=$((_counts+1))
+							if [ "$_maxtopermanent" -le "$_counts" ] ; then
+								_unban=1
+							fi
+						else
+							if [ "$_maxtopermanent" -eq 1 ] ; then
+								_unban=1
+							fi
+						fi
+					fi
+				fi
+			fi
+		fi
+	fi
+	
+	if [ "$_unban" -eq 0 ] ; then
+		if [ ! -z "$_app" ] ; then
+			$_ufwbinpath $_action $_blocktype from $_ip to $_destination$_app
+		else
+			$_ufwbinpath $_action $_blocktype$_protocol from $_ip to $_destination$_port 
+		fi
+	fi
+fi
+
+_cleanupinterval=86400
+if [ ! -f "$_storedir/cleanup.run" ] || [ $(expr $(date +%s) - $(stat -c %Y "$_storedir/cleanup.run")) -gt "$_cleanupinterval" ] ; then
+nohup "$_srcsbinpath/cleanips" "noask" "$_cleanipwithban" "$_ipnotactivetime" "$_maxtopermanent" "$_dbfile" &
+fi
+
+exit 0

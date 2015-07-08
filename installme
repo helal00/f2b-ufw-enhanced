@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+_srcsbinpath=$(dirname $(readlink -f $0))
+
+function getosname(){
+	if [ -f /etc/os-release ] ; then
+		eval $(cat /etc/os-release | grep "ID")
+		echo $ID
+	fi
+}
+
+function confirmtogo(){
+	local _conit _valtogo _msg
+	_msg=$1
+	_valtogo=$2
+	if [ -z "$_msg" ] ; then
+		exit 1
+	fi
+	read -p "$_msg" _conit
+	_conit=${_conit,,}
+	if [ -z "$_valtogo" ] ; then
+		_valtogo="yes"
+	else
+		_valtogo=${_valtogo,,}
+	fi
+	if [ "$_valtogo" = "notempty" ] && [ ! -z "$_conit" ] ; then
+		echo "$_conit"
+		return 0
+	elif [ "$_valtogo" = "pathexist" ] && [ -e "$_conit" ] ; then
+		echo "$_conit"
+		return 0
+	elif [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
+		return 0
+	fi
+	return 1
+}
+
+function escapepath(){
+	local _thep
+	_thep=$1
+	_thep=${_thep//\//\\/}
+	echo "$_thep"
+}
+
+function replaceline(){
+	local _pattern _replace _file
+	_pattern=$1
+	_replace=$2
+	_file=$3
+	sed -e "/$_pattern/ { c \
+	$_replace
+	}" "$_file"
+}
+
+ 
+_installerdir="$PWD/installer_dir"
+_curdir=$PWD
+_osname=$(getosname)
+_debianbased=1
+if [ "$_osname" = "debian" ] || [ "$_osname" = "ubuntu" ] ; then
+	_debianbased=0
+	sudo apt-get -y install ufw python curl jq bc whois
+	if [ $? -ne 0 ] ; then
+		echo "'ufw python curl jq bc whois whois' packages can't be installed properly, there is some error. Please install them yourselft to continue." 1>&2
+		exit 1
+	fi
+else
+	echo "	WARNING: Your operating system is not officially supported for automated installation, 'ufw python curl jq bc' packages need to be installed by yourself. Fully supported version is Debian 7 (wheezy) or Ubuntu 14.04 (truesty) or up. Please install 'ufw python curl jq bc' packages for your distro to use this utility. e.g. for debian/ubuntu, sudo apt-get -y install ufw python curl jq bc" 1>&2
+	exit 1
+fi
+
+
+if sudo ufw status | grep -q inactive ; then
+	sudo ufw limit ssh
+	ufw enable
+	echo "Only the ssh port (see /etc/services for port definations) is open. You should open other ports using 'sudo ufw' command for the applications you are using. e.g. sudo ufw http https" 1>&2
+fi
+ufw status
+
+mkdir -p $_installerdir
+cd $_installerdir
+$_srcsbinpath/getgitrepo https://github.com/seb-m/pyinotify last
+cd pyinotify-*
+python setup.py install
+python -m pyinotify -h
+cd $_curdir
+
+_f2blocation=$(command -v fail2ban-client)
+
+if [ ! -z "$_f2blocation" ] ; then
+	fail2ban-client reload
+	_insatlledver=$("$_f2blocation" version)
+	_latestversion=$($_srcsbinpath/githublatest https://github.com/fail2ban/fail2ban)
+	if [ "$_insatlledver" != "$_latestversion" ] ; then
+		echo "	INFORMATION: Newer version of fail2ban avaibale. You have version: $_insatlledver and version  available: $_latestversion. Check https://github.com/fail2ban/fail2ban for more detials, if you wish to upgrade fail2ban."
+	fi
+else
+	_installanyway=1
+	if [ "$_debianbased" -eq 1 ] && [ -z "$_f2blocation" ] ; then
+		echo "	IMPORTANT: Your operating system is not officially supported for automated installation.Fully supported version is Debian 7 (wheezy) or Ubuntu 14.04 (truesty) or up. we can't fin Fail2ban installed in your system." 1>&2
+		if confirmtogo "Do you want to install Fail2ban yourself or want us to fetch latest version from github and do the basic setup? In later case, you might need to copy some init scripts to your distro's init directories to start fail2ban automatically on reboot. If you know how to do that, you should let us fetach the latest version from github. Please type 'yes ' to fetch fail2ban latest or press only enter to quit this script.(yes/enter to quit): " ; then
+			_installanyway=0
+		fi
+	fi
+
+	if ( [ "$_debianbased" -eq 0 ] || [ "$_installanyway" -eq 0 ] ) && [ -z "$_f2blocation" ] ; then
+		
+		cd $_installerdir
+		$_srcsbinpath/getgitrepo https://github.com/fail2ban/fail2ban last
+		cd fail2ban-*
+		python setup.py install
+		_f2blocation=$(command -v fail2ban-client)
+		if [ -z "$_f2blocation" ] ; then 
+			echo "fail2ban can't be installed properly, there is some error. Please install them yourselft to continue." 1>&2
+			exit 1
+		fi
+		if [ -d /etc/logrotate.d/ ] ; then
+		cat > /etc/logrotate.d/fail2ban <<-EOL
+		/var/log/fail2ban.log {
+		   
+			weekly
+			rotate 4
+			compress
+
+			delaycompress
+			missingokA
+			postrotate
+			$_f2blocation flushlogs  1>/dev/null || true
+			endscript
+
+			# If fail2ban runs as non-root it still needs to have write access
+			# to logfiles.
+			# create 640 fail2ban adm
+			create 640 root adm
+		}
+		EOL
+		fi
+		if [ $_debianbased -eq 0 ]; then
+			cp files/debian-initd /etc/init.d/fail2ban
+			chmod +x /etc/init.d/fail2ban
+			cp files/fail2ban.upstart /etc/init/fail2ban.conf
+			_f2blocationre=${_f2blocation////\\/}
+			sed -i "s/\/usr\/bin\/fail2ban-client/$_f2blocationre/g" /etc/init/fail2ban.conf
+		else
+			echo "Please copy and rename init/service files from $(eval echo "${_installerdir}/fail2ban-*")/files/ to the appropriate directory for your distro" 1>&2
+		fi
+		cd $_curdir
+	fi
+fi
+
+replaceline "helperbase = " "helperbase = $_srcsbinpath/" "$_srcsbinpath/actions/ufw-custom.conf"
+replaceline "dbfile = " "dbfile = $_srcsbinpath/.store/balcklist.db" "$_srcsbinpath/actions/badips_custom.conf"
+replaceline "dbfile = " "dbfile = $_srcsbinpath/.store/balcklist.db" "$_srcsbinpath/actions/blocklist_de_custom.conf"
+replaceline "dbfile = " "dbfile = $_srcsbinpath/.store/balcklist.db" "$_srcsbinpath/actions/xarf-login-attack_custom.conf"
+
+
+_nginxlocation=$(command -v nginx)
+_justinsnginx=1
+if [ -z "$_nginxlocation" ] ; then
+	if confirmtogo "We can't find Nginx installed into your system.Do you still want to install Nginx specific jails? (yes/only enter to cancel) : " ; then
+		_justinsnginx=0
+	fi
+fi
+
+if [ ! -z "$_nginxlocation" ] || [ "$_justinsnginx" -eq 0 ] ; then
+	ln -fs $_srcsbinpath/actions/* /etc/fail2ban/action.d/
+	ln -fs $_srcsbinpath/filters/* /etc/fail2ban/filter.d/
+	ln -fs $_srcsbinpath/jails/* /etc/fail2ban/jail.d/
+else
+	ln -fs $(eval echo "$_srcsbinpath/actions/!(nginx-*)") /etc/fail2ban/action.d/
+	ln -fs $(eval echo "$_srcsbinpath/filters/!(nginx-*)") /etc/fail2ban/filter.d/
+	ln -fs $(eval echo "$_srcsbinpath/jails/!(nginx-*)") /etc/fail2ban/jail.d/
+fi
+
+fail2ban-client reload

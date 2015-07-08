@@ -1,0 +1,299 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+_srcsbinpath=$(dirname $(readlink -f $0))
+_noask=""
+if [ "$1" = "noask" ] ; then
+	_noask="noask"
+	shift
+fi
+
+_cleanipwithban="$1"
+shift
+_ipnotactivetime="$1"
+shift
+_maxtopermanent="$1"
+shift
+_dbfile="$1"
+#shift
+#_manualblocklist="$1"
+
+
+
+function confirmtogo(){
+	local _conit _valtogo _msg
+	_msg=$1
+	_valtogo=$2
+	if [ -z "$_msg" ] ; then
+		exit 1
+	fi
+	read -p "$_msg" _conit
+	_conit=${_conit,,}
+	if [ -z "$_valtogo" ] ; then
+		_valtogo="yes"
+	else
+		_valtogo=${_valtogo,,}
+	fi
+	if [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
+		return 0
+	fi
+	return 1
+}
+
+function isvalidip4(){
+	if echo "$1" | grep -qE "^(([0-9][0-9]?|[0-1][0-9][0-9]|[2][0-4][0-9]|[2][5][0-5])\.){3}([0-9][0-9]?|[0-1][0-9][0-9]|[2][0-4][0-9]|[2][5][0-5])$" ; then
+		return 0
+	fi
+	return 1
+}
+
+function isposint(){
+	local _val
+	_val=$1
+	if [ -n "$_val" ] && echo "$_val" | grep -q "^-\?[0-9]*$" && [ "$_val" -ge 0 ] ; then
+	return 0
+	fi
+	return 1
+}
+
+function strtoarry(){
+	local _str _retarray _deli _c _l;_str=$1 _retarray=$2 _deli=$3
+	eval unset $_retarray
+	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo $_str | sed -e "s/$_deli/\n/g")"
+}
+
+if [ -z "$_dbfile" ] || [ ! -f "$_dbfile" ] ; then
+	
+	if [ -z  "$_noask" ] ; then
+		if [ -f "$_srcsbinpath/.store/balcklist.db" ] && confirmtogo "We found a db file at $_srcsbinpath/.store/balcklist.db, do you want to use this db? (yes/press enter only to cancel): " ; then
+			_dbfile="$_srcsbinpath/.store/balcklist.db"
+		fi
+		if [ -z "$_dbfile" ] ; then
+			read -p "Please enter the db file location : " _dbfile
+			if [ -z "$_dbfile" ] || [ ! -f "$_dbfile" ] ; then
+				echo "ERROR: Your input: $_dbfile is not a valid file, file doesn't exist." 1>&2
+				exit 1
+			fi
+		fi
+	else
+		echo "No valid dbfile path given." 1>&2
+		exit 1
+	fi
+fi
+
+if [ -z "$_cleanipwithban" ] || ! isposint "$_cleanipwithban" ; then
+	if [ -z  "$_noask" ] ; then
+		read -p "You want to clean up ips with atleast how many bans? Type a number >0 : " _cleanipwithban
+		if [ -z "$_cleanipwithban" ] || ! isposint "$_cleanipwithban" ; then
+			echo "ERROR: Your input: $_cleanipwithban is not a number greater than 0" 1>&2
+			exit
+		fi
+	else
+		echo "No valid bans number given." 1>&2
+		exit 1
+	fi
+fi
+
+if [ -z "$_ipnotactivetime" ] || ! isposint "$_ipnotactivetime" ; then
+	if [ -z  "$_noask" ] ; then
+		read -p "You want to cleanup ip inactive for how many months? Type a number >0 : " _ipnotactivetime
+		if [ -z "$_ipnotactivetime" ] || ! isposint "$_ipnotactivetime" ; then
+			echo "ERROR: Your input: $_ipnotactivetime is not a number greater than 0" 1>&2
+			exit 1
+		fi
+	else
+		echo "No valid bans inactive times given." 1>&2
+		exit 1
+	fi
+fi
+
+if [ -z "$_maxtopermanent" ] || ! isposint "$_maxtopermanent" ; then
+	if [ -z  "$_noask" ] ; then
+		read -p "You want to permanently ban a ip after how many temporary bans? Type a number >0 : " _maxtopermanent
+		if [ -z "$_maxtopermanent" ] || ! isposint "$_maxtopermanent" ; then
+			echo "ERROR: Your input: $_ipnotactivetime is not a number greater than 0" 1>&2
+			exit 1
+		fi
+	else
+		echo "No valid max bans to permament value given." 1>&2
+		exit 1
+	fi
+fi
+
+
+
+#if [ -z "$_manualblocklist" ] || [ ! -f "$_manualblocklist" ] ; then
+	
+	#if [ -z  "$_noask" ] ; then
+		#if [ -f "$_srcsbinpath/manualblocked.list" ] && confirmtogo "We found a manually listed block ips file at $_srcsbinpath/manualblocked.list, do you want to use this list? (yes/press enter only to cancel): " ; then
+			#_manualblocklist="$_srcsbinpath/manualblocked.list"
+		#fi
+		
+		#if [ -z "$_manualblocklist" ] && confirmtogo "do you want to use a manual list of blocked ips?(yes/press enter only to cancel): " ; then
+			#read -p "Please enter the location of manual list of blocked ips file: " _manualblocklist
+			#if [ -z "$_manualblocklist" ] || [ ! -f "$_manualblocklist" ] ; then
+				#echo "ERROR: Your input: $_manualblocklist is not a valid file, file doesn't exist." 1>&2
+				#exit 1
+			#fi
+		#fi
+	#else
+		#if [ -f "$_srcsbinpath/manualblocked.list" ] ; then
+			#_manualblocklist="$_srcsbinpath/manualblocked.list"
+		#fi
+	#fi
+#fi
+
+
+ufwunban(){
+local _iptodel _ln
+_iptodel=$1
+for _ln in $(ufw status numbered | (grep "$_iptodel" | awk -F"[][]" '{print $2}'))
+do
+#echo "call from line no: $2 :ufw to delete ip $_iptodel"
+ufw --force delete $_ln
+done
+}
+
+
+
+ufwban(){
+local _iptoadd _savetofile
+_iptoadd=$1
+_savetofile=$2
+
+if [ ! -z "$_savetofile" ] ; then
+	echo "$_iptoadd" >> "$_savetofile"
+fi
+
+if ! ufw status numbered | grep -qE "DENY.*$_iptoadd" ; then
+ufwb insert 1 deny from $_iptoadd to any
+#echo "call from line no: $3 :ufw to add ip $_iptoadd"
+fi
+}
+
+#echo "_dbfile=$_dbfile"
+#echo "_cleanipwithban=$_cleanipwithban" 
+#echo "_ipnotactivetime=$_ipnotactivetime"
+#echo "_maxtopermanent=$_maxtopermanent"
+#echo "_manualblocklist=$_manualblocklist"
+
+if [ "$_ipnotactivetime" -eq 0 ] ; then
+	_ipnotactivetime=1
+fi
+_ipnotactivetime=$(echo "$_ipnotactivetime*30*24*60*60" | bc)
+
+_permanentbannedlist="$_srcsbinpath/permanent.list"
+rm -f "$_permanentbannedlist"
+_differencelist="$_srcsbinpath/difference.list"
+rm -f "$_differencelist"
+_temploc="/tmp/ufw-cleanips"
+_tempcleandb="clean.db"
+mkdir -p "$_temploc"
+_storedir=$(dirname $_dbfile)
+cp -f "$_dbfile" "${_dbfile}.bak"
+
+while read _ipline           
+do   
+if [ ! -z "$_ipline" ] ; then
+	_disabled=""
+	if [ "${_ipline:0:1}" = "#" ] ; then
+		_disabled="#"
+		_ipline="${_ipline:1}"
+	fi
+	#unset _cparts
+	strtoarry "$_ipline" "_cparts" '|' 
+	if [ ${#_cparts[@]} -gt 0 ] && isvalidip4 "${_cparts[0]}"  ; then
+		if [ -z "${_cparts[1]}" ] || ! isposint "${_cparts[1]}" ; then
+			_cparts[1]=1
+		fi
+		if [ "${_cparts[1]}" -eq 0 ] ; then
+			_cparts[1]=1
+		fi
+
+		if [ "${_cparts[1]}" -ge "$_maxtopermanent" ] ; then
+			if [ ! -z "$_disabled" ] ; then
+				if [ -z "${_cparts[2]}" ] ; then
+					echo "$_disabled${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
+				else
+					echo "$_disabled${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+				fi
+				ufwunban "${_cparts[0]}" 177
+				continue
+			fi
+
+			if _tinuts=$(date -d "${_cparts[2]}" +%s) && [ $(echo "$(date +%s) - $_tinuts" | bc) -ge "$_ipnotactivetime" ] ; then
+					echo "#${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+					ufwunban "${_cparts[0]}" 166
+			else
+				if [ -z "${_cparts[2]}" ] ; then
+					echo "${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
+				else
+					echo "${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+				fi
+				ufwban "${_cparts[0]}" "$_permanentbannedlist" 190
+				
+			fi
+			continue	
+		fi
+		 
+		if [ "${_cparts[1]}" -ge "$_cleanipwithban" ] ; then
+			if [ ! -z "$_disabled" ] ; then
+				if [ -z "${_cparts[2]}" ] ; then
+					echo "$_disabled${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
+				else
+					echo "$_disabled${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+				fi
+				ufwunban "${_cparts[0]}" 203
+				continue
+			fi
+
+			if _tinuts=$(date -d "${_cparts[2]}" +%s) && [ $(echo "$(date +%s) - $_tinuts" | bc) -ge "$_ipnotactivetime" ] ; then
+					ufwunban "${_cparts[0]}" 208
+			else
+				if [ -z "${_cparts[2]}" ] ; then
+					echo "${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
+				else
+					echo "${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+				fi
+			fi
+			continue
+		fi
+		
+		if [ ! -z "$_disabled" ] ; then
+			ufwunban "${_cparts[0]}" 220
+			continue
+		fi
+
+		if [ -z "${_cparts[2]}" ] ; then
+			echo "${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
+		else
+			echo "${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+		fi
+	fi
+fi      
+done < "${_dbfile}.bak"
+
+
+ufw status | grep "DENY" | awk '{print $NF}' > "$_temploc/currbanned"
+while read _ipline
+do
+if [ ! -z "$_ipline" ] && ! grep -q "$_ipline" "$_permanentbannedlist" ; then
+#grep "$_ipline" "${_dbfile}"
+echo "$_ipline" >> "$_differencelist"
+fi
+done < "$_temploc/currbanned"
+echo "$(date)" > "$_storedir/cleanup.run"
+mv -f "$_temploc/$_tempcleandb" "$_dbfile"
+rm -rf "$_temploc"

@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+_srcsbinpath=$(dirname $(readlink -f $0))
+_badipskey=""
+_badipscomkeyprefix=".key-badsipcom-"
+_myhostip="$(ip route get 1 | awk '{print $NF;exit}')"
+_badipskeyfile="${_badipscomkeyprefix}${_myhostip//./-}"
+
+function confirmtogo(){
+	local _conit _valtogo _msg
+	_msg=$1
+	_valtogo=$2
+	if [ -z "$_msg" ] ; then
+		exit 1
+	fi
+	read -p "$_msg" _conit
+	_conit=${_conit,,}
+	if [ -z "$_valtogo" ] ; then
+		_valtogo="yes"
+	else
+		_valtogo=${_valtogo,,}
+	fi
+	if [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
+		return 0
+	fi
+	return 1
+}
+
+function trimStr(){
+	local _deli _deli2 _strtotrim
+	if [ "$#" -eq 0 ] ; then
+		return 1
+	elif [ "$#" -eq 1 ] ; then
+		_deli=" "
+		_deli2=" "
+		_strtotrim="$*"
+	elif [ "$#" -eq 2 ] ; then
+		_deli="$1"
+		_deli2="$1"
+		shift
+		_strtotrim="$*"
+	elif [ "$#" -gt 2 ] ; then
+		_deli="$1"
+		shift
+		_deli2="$1"
+		shift
+		_strtotrim="$*"
+	fi
+	_strtotrim="${_strtotrim/#$_deli}"
+	_strtotrim="${_strtotrim/%$_deli2}"
+	echo "$_strtotrim"
+}
+
+if [ -f "$_badipskeyfile" ] ; then
+	_badipskey=$(cat "$_badipskeyfile")
+else
+	_keyjson=$(wget https://www.badips.com/get/key -qO -)
+	_keystring=$(echo "$_keyjson" | jq '.key')
+	if [ ! -z "$_keystring" ] ; then
+		_badipskey=$(trimStr "\"" "$_keystring")
+		echo "$_badipskey" > "$_badipskeyfile"
+	else
+		echo "ERROR: generating of badips.com key has failed, please try later" 1>&2
+		exit 1
+	fi
+fi
+
+echo "The current badips.com key for this server ip $_myhostip : $_badipskey"
+if confirmtogo "Do you want to change it by force? (yes/press enter only to cancel): " ; then
+	_keyjson=$(wget https://www.badips.com/get/key?force -qO -)
+	_keystring=$(echo "$_keyjson" | jq '.key')
+	if [ ! -z "$_keystring" ] ; then
+		_badipskey=$(trimStr "\"" "$_keystring")
+		echo "$_badipskey" > "$_badipskeyfile"
+		echo "The new badips.com key for this server ip $_myhostip : $_badipskey"
+		echo "You can use this key to sync other servers with this servers blocklist"
+	else
+		echo "ERROR: There might be some error generating the new key, Please try later." 1>&2
+		exit 1
+	fi
+fi
+
+if confirmtogo "Do you want this server($_myhostip) to sync with another server ip's key?(yes/press enter only to cancel)" ; then
+	read -p "Which badips.com key you want to sync with this server($_myhostip)? please type it followed by pressing enter: " _theinputkey
+	if [ ! -z "$_theinputkey" ] ; then
+		if confirmtogo "Please confirm again that you want to sync with the key: $_theinputkey . Are you confirmed? (yes/press enter only to cancel) : " ; then
+			_keyjson=$(wget https://www.badips.com/set/key/"$_theinputkey" -qO -)
+			_keystring=$(echo "$_keyjson" | jq '.key')
+			if [ ! -z "$_keystring" ] && [ "$_keystring" = "$_theinputkey" ] ; then
+				_badipskey=$(trimStr "\"" "$_keystring")
+				echo "$_badipskey" > "$_badipskeyfile"
+				echo "The badips.com key: $_theinputkey  is now succesfully sync with this server($_myhostip)."
+			else
+				echo "ERROR: Syncing The badips.com key: $_theinputkey to his server($_myhostip) has failed. Please try later." 1>&2
+				exit 1
+			fi
+		fi
+	else
+		echo "ERROR: We did't read any text from your input." 1>&2
+		exit 1
+	fi
+fi
+
+

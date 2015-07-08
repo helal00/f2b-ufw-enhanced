@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+_iptochek=$1
+if [ -z "$_iptochek" ] ; then
+	echo "No ip given." 1>&2
+	exit 1
+fi
+_roothome=$(eval echo ~root)
+if [ ! -d "$_roothome" ] ; then
+	echo "root home can't determined." 1>&2
+	exit 1
+fi
+if [ -f "$_roothome/.ipmanage/allowed" ] ; then
+	readarray _users < "$_roothome/.ipmanage/allowed"
+	for _usr in "${_users[@]}"
+	do
+		if [ ! -z  "$_usr" ] ; then
+			_userhome=$(eval echo ~"$_usr")
+			if [ ! -z "$_userhome" ] && [ -f "$_userhome/.ipmanage/lastusedip" ] ; then
+				_ip=$(cat "$_userhome/.ipmanage/lastusedip")
+				if [ "$_iptochek" = "$_ip" ] ; then
+					#echo -n "True"
+					exit 0
+				fi
+			fi
+		fi	
+	done
+fi
+exit 1
