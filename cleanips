@@ -46,7 +46,21 @@ function confirmtogo(){
 	else
 		_valtogo=${_valtogo,,}
 	fi
-	if [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
+	if [ "$_valtogo" = "notempty" ] ; then
+		if [ ! -z "$_conit" ] ; then
+			echo "$_conit"
+			return 0
+		else
+			return 1
+		fi
+	elif [ "$_valtogo" = "pathexist" ] ; then
+		if [ -e "$_conit" ] ; then
+			echo "$_conit"
+			return 0
+		else
+			return 1
+		fi
+	elif [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
 		return 0
 	fi
 	return 1
