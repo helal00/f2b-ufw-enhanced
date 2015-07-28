@@ -14,69 +14,26 @@
 #along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 _srcsbinpath=$(dirname $(readlink -f $0))
+
+declare -a _requiredfiles
+declare -a _requiredexefiles
+
+_requiredfiles[${#_requiredfiles[@]}]="functions"
+
+if [ ! -z "$_srcsbinpath" ] ; then
+	if [ -s "$_srcsbinpath/resolve" ] ; then
+		. $_srcsbinpath/resolve	
+	else
+		echo "$_srcsbinpath/resolve file not found!" 1>&2
+		exit 1
+	fi
+fi
+
 _badipskey=""
 _badipscomkeyprefix=".key-badsipcom-"
 _myhostip="$(ip route get 1 | awk '{print $NF;exit}')"
 _badipskeyfile="${_badipscomkeyprefix}${_myhostip//./-}"
 
-function confirmtogo(){
-	local _conit _valtogo _msg
-	_msg=$1
-	_valtogo=$2
-	if [ -z "$_msg" ] ; then
-		exit 1
-	fi
-	read -p "$_msg" _conit
-	_conit=${_conit,,}
-	if [ -z "$_valtogo" ] ; then
-		_valtogo="yes"
-	else
-		_valtogo=${_valtogo,,}
-	fi
-	if [ "$_valtogo" = "notempty" ] ; then
-		if [ ! -z "$_conit" ] ; then
-			echo "$_conit"
-			return 0
-		else
-			return 1
-		fi
-	elif [ "$_valtogo" = "pathexist" ] ; then
-		if [ -e "$_conit" ] ; then
-			echo "$_conit"
-			return 0
-		else
-			return 1
-		fi
-	elif [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
-		return 0
-	fi
-	return 1
-}
-
-function trimStr(){
-	local _deli _deli2 _strtotrim
-	if [ "$#" -eq 0 ] ; then
-		return 1
-	elif [ "$#" -eq 1 ] ; then
-		_deli=" "
-		_deli2=" "
-		_strtotrim="$*"
-	elif [ "$#" -eq 2 ] ; then
-		_deli="$1"
-		_deli2="$1"
-		shift
-		_strtotrim="$*"
-	elif [ "$#" -gt 2 ] ; then
-		_deli="$1"
-		shift
-		_deli2="$1"
-		shift
-		_strtotrim="$*"
-	fi
-	_strtotrim="${_strtotrim/#$_deli}"
-	_strtotrim="${_strtotrim/%$_deli2}"
-	echo "$_strtotrim"
-}
 
 if [ -f "$_badipskeyfile" ] ; then
 	_badipskey=$(cat "$_badipskeyfile")

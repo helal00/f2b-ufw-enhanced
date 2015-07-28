@@ -14,19 +14,30 @@
 #along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 _srcsbinpath=$(dirname $(readlink -f $0))
+
+declare -a _requiredfiles
+declare -a _requiredexefiles
+
+_requiredfiles[${#_requiredfiles[@]}]="functions"
+
+if [ ! -z "$_srcsbinpath" ] ; then
+	if [ -s "$_srcsbinpath/resolve" ] ; then
+		. $_srcsbinpath/resolve	
+	else
+		echo "$_srcsbinpath/resolve file not found!" 1>&2
+		exit 1
+	fi
+fi
+
+if [ ! -d "$_srcsbinpath/.store" ] ; then
+	echo "The prgram is not yet ready to run. Please run $_srcsbinpath/installme first." 1>&2
+	exit 1
+fi
 _delete=""
 _counter=0
 _curcounter=0
 _ip=$1
 
-function isint(){
-	local _val
-	_val=$1
-	if [ -n "$_val" ] && echo "$_val" | grep -q "^-\?[0-9]*$" ; then
-		return 0
-	fi
-	return 1
-}
 
 if [ -z "$_ip" ] ; then
 	echo "No ip given." 1>&2

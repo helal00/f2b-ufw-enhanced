@@ -38,6 +38,25 @@ _app="${20}"
 _port="${21}"
 _protocol="${22}"
 
+declare -a _requiredfiles
+declare -a _requiredexefiles
+
+_requiredfiles[${#_requiredfiles[@]}]="functions"
+
+if [ ! -z "$_srcsbinpath" ] ; then
+	if [ -s "$_srcsbinpath/resolve" ] ; then
+		. $_srcsbinpath/resolve	
+	else
+		echo "$_srcsbinpath/resolve file not found!" 1>&2
+		exit 1
+	fi
+fi
+
+if [ ! -d "$_srcsbinpath/.store" ] ; then
+	echo "The prgram is not yet ready to run. Please run $_srcsbinpath/installme first." 1>&2
+	exit 1
+fi
+
 
 #echo "I am running.......no worries..." > "$_srcsbinpath/testip.log"
 
@@ -51,58 +70,6 @@ if [ "$_isignoreip" -eq 1 ] && [ -f "$_srcsbinpath/iptoignore" ] ; then
 		exit 0
 	fi
 fi
-
-function strtoarry(){
-	local _str _retarray _deli _c _l;_str=$1 _retarray=$2 _deli=$3
-	eval unset $_retarray
-	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo $_str | sed -e "s/$_deli/\n/g")"
-}
-
-function isposint(){
-	local _val
-	_val=$1
-	if [ -n "$_val" ] && echo "$_val" | grep -q "^-\?[0-9]*$" && [ "$_val" -ge 0 ] ; then
-		return 0
-	fi
-	return 1
-}
-
-function replaceline(){
-	local _pattern _replace _file
-	_pattern=$1
-	_replace=$2
-	_file=$3
-	sed -i "/$_pattern/ { c \
-	$_replace
-	}" "$_file"
-}
-
-function join { local IFS="$1"; shift; echo "$*"; }
-
-function trimStr(){
-	local _deli _deli2 _strtotrim
-	if [ "$#" -eq 0 ] ; then
-		return 1
-	elif [ "$#" -eq 1 ] ; then
-		_deli=" "
-		_deli2=" "
-		_strtotrim="$*"
-	elif [ "$#" -eq 2 ] ; then
-		_deli="$1"
-		_deli2="$1"
-		shift
-		_strtotrim="$*"
-	elif [ "$#" -gt 2 ] ; then
-		_deli="$1"
-		shift
-		_deli2="$1"
-		shift
-		_strtotrim="$*"
-	fi
-	_strtotrim="${_strtotrim/#$_deli}"
-	_strtotrim="${_strtotrim/%$_deli2}"
-	echo "$_strtotrim"
-}
 
 function fetchBadips(){
 	local _filestore _tempfilestore _dbname _cat _score _interval _key _response
