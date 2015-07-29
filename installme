@@ -214,6 +214,8 @@ function mvfilewithext(){
 					mv "$_newfile" "${_newfile}.old"
 					mv "$_file" "$_newfile"
 				fi
+			else
+				mv "$_file" "$_newfile"
 			fi
 		else
 			mv "$_file" "$_newfile"
