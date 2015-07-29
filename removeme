@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+_srcsbinpath=$(dirname $(readlink -f $0))
+
+_f2bconfigloc="$1"
+if [ -z "$_f2bconfigloc" ] ; then
+	_f2bconfigloc="/etc/fail2ban"
+fi
+
+_f2blocation=$(command -v fail2ban-client)
+if [ ! -z "$_f2blocation" ] ; then
+	if ! $_f2blocation status &>>/dev/null ; then
+		echo "we can't find fail2ban is runnig on your system...aborting..." 1>&2
+		exit 1
+	fi
+else
+	echo "we can't find fail2ban is installed on your system...aborting..." 1>&2
+	exit 1
+fi
+
+function rmoutfileiflink(){
+	local _inloc _outloc
+	_inloc="$1"
+	_outloc="$2"
+	for _file in $(ls "$_inloc")
+	do
+		#echo "removing file: $_outloc/$_file"
+		if [ -L "$_outloc/$_file" ] ; then
+			rm -f "$_outloc/$_file"
+		fi
+	done
+}
+
+rmoutfileiflink "$_srcsbinpath/actions" "$_f2bconfigloc/action.d"
+rmoutfileiflink "$_srcsbinpath/filters" "$_f2bconfigloc/filter.d"
+rmoutfileiflink "$_srcsbinpath/jails" "$_f2bconfigloc/jail.d"
+
+$_f2blocation reload

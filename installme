@@ -31,6 +31,11 @@ if [ ! -z "$_srcsbinpath" ] ; then
 	fi
 fi
 
+_f2bconfigloc="$1"
+if [ -z "$_f2bconfigloc" ] ; then
+	_f2bconfigloc="/etc/fail2ban"
+fi
+
 _installerdir="$PWD/installer_dir"
 _curdir=$PWD
 _osname=$(getosname)
@@ -106,10 +111,10 @@ if [ ! -z "$_f2blocation" ] ; then
 			service fail2ban start
 		fi
 	else
-		fail2ban-client start
+		$_f2blocation start
 	fi
 	if [ ! -z "$_f2blocation" ] ; then
-		if ! fail2ban-client status &>>/dev/null ; then
+		if ! $_f2blocation status &>>/dev/null ; then
 			_f2blocation=""
 		fi
 	fi	
@@ -157,7 +162,7 @@ else
 			compress
 
 			delaycompress
-			missingokA
+			missingok
 			postrotate
 			$_f2blocation flushlogs  1>/dev/null || true
 			endscript
@@ -177,15 +182,15 @@ else
 			sed -i "s/\/usr\/bin\/fail2ban-client/$_f2blocationre/g" /etc/init/fail2ban.conf
 			service fail2ban start
 		else
-			fail2ban-client start
+			$_f2blocation start
 			echo "	IMPORTANT: Please copy and rename init/service files from $(eval echo "${_installerdir}/fail2ban-*")/files/ to the appropriate directory for your distro" 1>&2
 		fi
 		if [ $_debianbased -eq 0 ]; then
 			service fail2ban start
 		else
-			fail2ban-client start
+			$_f2blocation start
 		fi
-		if ! fail2ban-client status &>>/dev/null ; then
+		if ! $_f2blocation status &>>/dev/null ; then
 			echo "	ERROR: fail2ban can't be installed properly, there is some error. Please install them yourselft to continue." 1>&2
 			if [ "$_storeexist" -eq 1 ] ; then
 				sudo rm -rf "$_srcsbinpath/.store"
@@ -196,11 +201,36 @@ else
 	fi
 fi
 
+function mvfilewithext(){
+	local _inloc _ext
+	_inloc="$1"
+	_ext="$2"
+	for _file in $_inloc/*$_ext; do
+		_newfile="$_inloc/$(basename "$_file" "$_ext").txt"
+		echo "moving file: $_file to $_newfile"
+		if [ -f "$_newfile" ] ; then
+			if ! cmp --silent "$_file" "$_newfile" ; then
+				if confirmtogo "file: $_newfile exist and it is modified. Do you want to overwrite this file with original file's content? We do rename this file with '.old' extension before overwrite.(yes/only enter to cencel): "; then
+					mv "$_newfile" "${_newfile}.old"
+					mv "$_file" "$_newfile"
+				fi
+			fi
+		else
+			mv "$_file" "$_newfile"
+		fi
+	done
+}
+
+mvfilewithext "$_srcsbinpath/actions" ".original"
+mvfilewithext "$_srcsbinpath/filters" ".original"
+mvfilewithext "$_srcsbinpath/jails" ".original"
+
+if [ "$_srchomepath" != "$_f2bconfigloc" ] ; then
 replaceline "helperbase = " "helperbase = $_srcsbinpath/" "$_srcsbinpath/actions/ufw-custom.conf"
 replaceline "dbfile = " "dbfile = $_srcsbinpath/.store/balcklist.db" "$_srcsbinpath/actions/badips_custom.conf"
 replaceline "dbfile = " "dbfile = $_srcsbinpath/.store/balcklist.db" "$_srcsbinpath/actions/blocklist_de_custom.conf"
 replaceline "dbfile = " "dbfile = $_srcsbinpath/.store/balcklist.db" "$_srcsbinpath/actions/xarf-login-attack_custom.conf"
-
+fi
 
 _nginxlocation=$(command -v nginx)
 _justinsnginx=1
@@ -211,13 +241,13 @@ if [ -z "$_nginxlocation" ] ; then
 fi
 
 if [ ! -z "$_nginxlocation" ] || [ "$_justinsnginx" -eq 0 ] ; then
-	ln -fs $_srcsbinpath/actions/* /etc/fail2ban/action.d/
-	ln -fs $_srcsbinpath/filters/* /etc/fail2ban/filter.d/
-	ln -fs $_srcsbinpath/jails/* /etc/fail2ban/jail.d/
+	ln -fs $_srcsbinpath/actions/* $_f2bconfigloc/action.d/
+	ln -fs $_srcsbinpath/filters/* $_f2bconfigloc/filter.d/
+	ln -fs $_srcsbinpath/jails/* $_f2bconfigloc/jail.d/
 else
-	ln -fs $(eval echo "$_srcsbinpath/actions/!(nginx-*)") /etc/fail2ban/action.d/
-	ln -fs $(eval echo "$_srcsbinpath/filters/!(nginx-*)") /etc/fail2ban/filter.d/
-	ln -fs $(eval echo "$_srcsbinpath/jails/!(nginx-*)") /etc/fail2ban/jail.d/
+	ln -fs $(eval echo "$_srcsbinpath/actions/!(nginx-*)") $_f2bconfigloc/action.d/
+	ln -fs $(eval echo "$_srcsbinpath/filters/!(nginx-*)") $_f2bconfigloc/filter.d/
+	ln -fs $(eval echo "$_srcsbinpath/jails/!(nginx-*)") $_f2bconfigloc/jail.d/
 fi
 
-fail2ban-client reload
+$_f2blocation reload
