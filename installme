@@ -207,10 +207,10 @@ function mvfilewithext(){
 	_ext="$2"
 	for _file in $_inloc/*$_ext; do
 		_newfile="$_inloc/$(basename "$_file" "$_ext")"
-		echo "moving file: $_file to $_newfile"
+		#echo "moving file: $_file to $_newfile"
 		if [ -f "$_newfile" ] ; then
 			if ! cmp --silent "$_file" "$_newfile" ; then
-				if confirmtogo "file: $_newfile exist and it is modified. Do you want to overwrite this file with original file's content? We do rename this file with '.old' extension before overwrite.(yes/only enter to cencel): "; then
+				if confirmtogo "	IMPORTANT: file: $_newfile exist and it is modified. Do you want to overwrite this file with original file's content? We do rename this file with '.old' extension before overwrite.(yes/only enter to cencel): "; then
 					mv "$_newfile" "${_newfile}.old"
 					mv "$_file" "$_newfile"
 				fi
