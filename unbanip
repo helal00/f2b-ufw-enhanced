@@ -43,15 +43,13 @@ if [ -z "$_ip" ] ; then
 	echo "No ip given." 1>&2
 	exit 1
 else
-	if [ -f "$_srcsbinpath/balcklist.db" ] ; then
-		_ipline=$(grep "$_ip" "$_srcsbinpath/balcklist.db")
+	if [ -f "$_srcsbinpath/.store/balcklist.db" ] ; then
+		_ipline=$(grep "$_ip" "$_srcsbinpath/.store/balcklist.db")
 		if [ -z "$_ipline" ] ; then
 			echo "No Such ip : $_ip found in database."
 			exit 1
 		fi
-		read -p "Are you sure, you want disable/delete ip :  $_ip. (yes/enter onlyto cancel): " _besure
-		_besure=${_besure,,}
-		if [ -z "$_besure" ] || [ "$_besure" != "yes" ] ; then
+		if ! confirmtogo "Are you sure, you want disable/delete ip :  $_ip. (yes/enter onlyto cancel): " ; then 
 			exit 0
 		fi
 	else
@@ -86,15 +84,15 @@ fi
 
 if [ -z "$_delete" ] ; then
 	if [ "$_counter" -gt 0 ] ; then
-	sed -i "s/^$_prefix$_ip|$_curcounter/$_prefix$_doprefix$_ip|$_counter/" "$_srcsbinpath/balcklist.db"
+	sed -i "s/^$_prefix$_ip|$_curcounter/$_prefix$_doprefix$_ip|$_counter/" "$_srcsbinpath/.store/balcklist.db"
 	else
-	sed -i "s/^$_prefix$_ip/$_prefix$_doprefix$_ip/" "$_srcsbinpath/balcklist.db"
+	sed -i "s/^$_prefix$_ip/$_prefix$_doprefix$_ip/" "$_srcsbinpath/.store/balcklist.db"
 	fi
 else
-	sed -i "/^$_prefix$_ip/d" "$_srcsbinpath/balcklist.db"
+	sed -i "/^$_prefix$_ip/d" "$_srcsbinpath/.store/balcklist.db"
 fi
 
-for _ln in $(ufw status numbered |(grep "$_ip"|awk -F"[][]" '{print $2}'))
+for _ln in $(ufw status numbered | (grep "$_ip" | awk -F"[][]" '{print $2}'))
 do
 ufw --force delete $_ln
 done
