@@ -206,7 +206,7 @@ function mvfilewithext(){
 	_inloc="$1"
 	_ext="$2"
 	for _file in $_inloc/*$_ext; do
-		_newfile="$_inloc/$(basename "$_file" "$_ext").txt"
+		_newfile="$_inloc/$(basename "$_file" "$_ext")"
 		echo "moving file: $_file to $_newfile"
 		if [ -f "$_newfile" ] ; then
 			if ! cmp --silent "$_file" "$_newfile" ; then
