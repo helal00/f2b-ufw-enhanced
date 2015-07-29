@@ -35,6 +35,7 @@ function rmoutfileiflink(){
 	local _inloc _outloc
 	_inloc="$1"
 	_outloc="$2"
+	echo "removing from: $_outloc ..."
 	for _file in $(ls "$_inloc")
 	do
 		#echo "removing file: $_outloc/$_file"
