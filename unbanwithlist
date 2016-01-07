@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+_srcsbinpath=$(dirname $(readlink -f $0))
+
+_listfile=$1
+if [ ! -f "$_listfile" ] ; then
+	if [ -f "$_srcsbinpath/$_listfile" ] ; then
+		_listfile="$_srcsbinpath/$_listfile"
+	else
+		echo "No list file given." 1>&2
+		exit 1
+	fi
+fi
+
+ufwunban(){
+local _iptodel _ln
+_iptodel=$1
+for _ln in $(ufw status numbered | (grep "$_iptodel" | awk -F"[][]" '{print $2}'))
+do
+#echo "call from line no: $2 :ufw to delete ip $_iptodel"
+ufw --force delete $_ln
+done
+}
+
+while read _ip           
+do
+if [ ! -z "$_ip" ] ; then
+ufwunban $_ip
+fi 
+done < "$_listfile"

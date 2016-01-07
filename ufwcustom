@@ -58,7 +58,7 @@ if [ ! -d "$_srcsbinpath/.store" ] ; then
 fi
 
 
-#echo "I am running.......no worries..." > "$_srcsbinpath/testip.log"
+#echo "I am running.......no worries...$(date)" >> "$_srcsbinpath/testip.log"
 
 if [ -z "$_ip" ] ; then
 	echo "No ip given." 1>&2
@@ -84,6 +84,7 @@ function fetchBadips(){
 		fi
 	fi
 }
+
 
 #if [ ! -f "$_srcsbinpath/ufwcustomconf.conf" ] ; then
 #echo "_maxtopermanent=0" >> "$_srcsbinpath/ufwcustomconf.conf"
@@ -127,12 +128,14 @@ fi
 
 
 if [ "$_action" = "insert" ] ; then
+	singletonefile "$_storedir/ufw.lock" 60 3
+	echo "$$" > "$_storedir/ufw.lock"
 	if [ ! -z "$_app" ] ; then
 		$_ufwbinpath $_action $_insertpos $_blocktype from $_ip to $_destination$_app
 	else
 		$_ufwbinpath $_action $_insertpos $_blocktype$_protocol from $_ip to $_destination$_port 
 	fi
-	
+	rm -f "$_storedir/ufw.lock"
 	if [ ! -z "$_badipscomintval" ] ; then
 		_badipscomintval=$((_badipscomintval*60))
 	fi
@@ -192,34 +195,46 @@ if [ "$_action" = "insert" ] ; then
 			#_cparts=($(echo "$_ipline" | tr "|" " " ))
 			strtoarry "$_ipline" "_cparts" '|'
 			if [ ${#_cparts[@]} -eq 1 ] ; then
+				singletonefile "${_dbfile}.lock" 20 3
+				echo "$$" > "${_dbfile}.lock"
 				if [ ! -z "$_ipinblacklist" ] ; then
 					replaceline "$_ip" "$_ip|$((_maxtopermanent+1))|$(date)" "$_dbfile"
 				else
 					replaceline "$_ip" "$_ip|2|$(date)" "$_dbfile"
 				fi
+				rm -f "${_dbfile}.lock"
 			elif [ ${#_cparts[@]} -ge 2 ] ; then
 				_counts=${_cparts[1]}
 				if isposint $_counts ; then
 					_counts=$((_counts+1))
+					singletonefile "${_dbfile}.lock" 20 3
+					echo "$$" > "${_dbfile}.lock"
 					if [ ! -z "$_ipinblacklist" ] ; then
 						replaceline "$_ip" "$_ip|$((_maxtopermanent+_counts))|$(date)" "$_dbfile"
 					else
 						replaceline "$_ip" "$_ip|$_counts|$(date)" "$_dbfile"
 					fi
+					rm -f "${_dbfile}.lock"
 				else
+					singletonefile "${_dbfile}.lock" 20 3
+					echo "$$" > "${_dbfile}.lock"
 					if [ ! -z "$_ipinblacklist" ] ; then
 						replaceline "$_ip" "$_ip|$((_maxtopermanent+1))|$(date)" "$_dbfile"
 					else
 						replaceline "$_ip" "$_ip|2|$(date)" "$_dbfile"
-					fi	
+					fi
+					rm -f "${_dbfile}.lock"	
 				fi
 			fi	
 		else
+			singletonefile "${_dbfile}.lock" 20 3
+			echo "$$" > "${_dbfile}.lock"
 			if [ ! -z "$_ipinblacklist" ] ; then
 				echo "$_ip|$_maxtopermanent|$(date)" >> "$_dbfile"
 			else
 				echo "$_ip|1|$(date)" >> "$_dbfile"
 			fi
+			rm -f "${_dbfile}.lock"
 		fi
 	fi
 	
@@ -228,7 +243,10 @@ elif [ "$_action" = "delete" ] ; then
 	
 	if isposint $_maxtopermanent && [ $_maxtopermanent -gt 0 ] ; then
 		if [ -f "$_dbfile" ] ; then
+		singletonefile "${_dbfile}.lock" 20 3
+		echo "$$" > "${_dbfile}.lock"
 		_ipline=$(grep "$_ip" "$_dbfile")
+		rm -f "${_dbfile}.lock"
 			if [ ! -z "$_ipline" ] ; then
 				if [ ! "${_ipline:0:1}" = "#" ] ; then
 					#_cparts=($(echo "$_ipline" | tr "|" " " ))
@@ -256,11 +274,14 @@ elif [ "$_action" = "delete" ] ; then
 	fi
 	
 	if [ "$_unban" -eq 0 ] ; then
+		singletonefile "$_storedir/ufw.lock" 60 3
+		echo "$$" > "$_storedir/ufw.lock"
 		if [ ! -z "$_app" ] ; then
 			$_ufwbinpath $_action $_blocktype from $_ip to $_destination$_app
 		else
 			$_ufwbinpath $_action $_blocktype$_protocol from $_ip to $_destination$_port 
 		fi
+		rm -f "$_storedir/ufw.lock"
 	fi
 fi
 
