@@ -81,17 +81,16 @@ dbfile = .store/balcklist.db
 maxbantopermanent = 8
 
 # Option: ipnotactivetime
-# Notes.: Used for clean up 
-# Values: any positive number > 0 as months; if 0 given, considered 1
+# Notes.: clean up ips with this or more inactivity periods.
+# Values: [ NUM ] > 0 ;any positive number > 0 as days.
 #
-ipnotactivetime = 12
+ipnotactivetime = 30
 
 # Option: cleanipwithban
-# Notes.: clean ips with this ban count after ipnotactivetime option
-# Values:  [ NUM ] should below maxbantopermanent option, 0=disable cleanup
+# Notes.: clean up ips with atleast this amount of bans for ipnotactivetime option
+# Values:  [ NUM ] >=0;0 means all ips regardless of bans count
 #
-cleanipwithban = 5
-
+cleanipwithban = 0
 
 # Option:  badipscom
 # Notes.:  fetch block list from badips.com 

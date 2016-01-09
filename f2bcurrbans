@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+_srcsbinpath=$(dirname $(readlink -f $0))
+
+declare -a _requiredfiles
+declare -a _requiredexefiles
+
+_requiredfiles[${#_requiredfiles[@]}]="functions"
+
+if [ ! -z "$_srcsbinpath" ] ; then
+	if [ -s "$_srcsbinpath/resolve" ] ; then
+		. $_srcsbinpath/resolve	
+	else
+		echo "$_srcsbinpath/resolve file not found!" 1>&2
+		exit 1
+	fi
+fi
+
+if [ ! -d "$_srcsbinpath/.store" ] ; then
+	echo "The prgram is not yet ready to run. Please run $_srcsbinpath/installme first." 1>&2
+	exit 1
+fi
+
+_tab=$(printf '\t')
+_alljails=$(fail2ban-client status | grep ' Jail list:' | awk -F: '{print $NF}')
+_alljails=$(trimStr "$_tab" "$_alljails")
+strtoarry "$_alljails" "_uparts" ', '
+for _jail in "${_uparts[@]}"
+do
+_ipline=$(fail2ban-client status $_jail | grep ' Banned IP list:' | awk -F: '{print $NF}')
+_ipline=$(trimStr "$_tab" "$_ipline")
+if [ ! -z $_ipline ] ; then
+	strtoarry "$_ipline" "_iplist" ', '
+	echo "jail:$_jail (${#_iplist[@]}): ${_iplist[@]}"
+else
+	echo "No banned ip(s) for jail:$_jail"
+fi
+done

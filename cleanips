@@ -46,12 +46,19 @@ shift
 _maxtopermanent="$1"
 shift
 _dbfile="$1"
-#shift
-#_manualblocklist="$1"
+shift
+_manualblocklist="$1"
+shift
+_permanentbannedlist="$1"
+if [ -z "$_manualblocklist" ] ; then
+	_manualblocklist="$_srcsbinpath/manualblocked.list"
+fi
+if [ -z "$_permanentbannedlist" ] ; then
+	_permanentbannedlist="$_srcsbinpath/permanent.list"
+fi
 
 
 if [ -z "$_dbfile" ] || [ ! -f "$_dbfile" ] ; then
-	
 	if [ -z  "$_noask" ] ; then
 		if [ -f "$_srcsbinpath/.store/balcklist.db" ] && confirmtogo "We found a db file at $_srcsbinpath/.store/balcklist.db, do you want to use this db? (yes/press enter only to cancel): " ; then
 			_dbfile="$_srcsbinpath/.store/balcklist.db"
@@ -71,9 +78,9 @@ fi
 
 if [ -z "$_cleanipwithban" ] || ! isposint "$_cleanipwithban" ; then
 	if [ -z  "$_noask" ] ; then
-		read -p "You want to clean up ips with atleast how many bans? Type a number >0 : " _cleanipwithban
+		read -p "You want to clean up ips with atleast how many bans? 0 means all ips regardless of ban count.Type a number >=0 : " _cleanipwithban
 		if [ -z "$_cleanipwithban" ] || ! isposint "$_cleanipwithban" ; then
-			echo "ERROR: Your input: $_cleanipwithban is not a number greater than 0" 1>&2
+			echo "ERROR: Your input: $_cleanipwithban is not a number greater than or equal to 0" 1>&2
 			exit
 		fi
 	else
@@ -82,10 +89,11 @@ if [ -z "$_cleanipwithban" ] || ! isposint "$_cleanipwithban" ; then
 	fi
 fi
 
-if [ -z "$_ipnotactivetime" ] || ! isposint "$_ipnotactivetime" ; then
+
+if [ -z "$_ipnotactivetime" ] || ! isposint "$_ipnotactivetime" || [ "$_ipnotactivetime" -lt 1 ] ; then
 	if [ -z  "$_noask" ] ; then
 		read -p "You want to cleanup ip inactive for how many months? Type a number >0 : " _ipnotactivetime
-		if [ -z "$_ipnotactivetime" ] || ! isposint "$_ipnotactivetime" ; then
+		if [ -z "$_ipnotactivetime" ] || ! isposint "$_ipnotactivetime" || [ "$_ipnotactivetime" -lt 1 ] ; then
 			echo "ERROR: Your input: $_ipnotactivetime is not a number greater than 0" 1>&2
 			exit 1
 		fi
@@ -95,34 +103,16 @@ if [ -z "$_ipnotactivetime" ] || ! isposint "$_ipnotactivetime" ; then
 	fi
 fi
 
-if [ -z "$_maxtopermanent" ] || ! isposint "$_maxtopermanent" ; then
-	if [ -z  "$_noask" ] ; then
-		read -p "You want to permanently ban a ip after how many temporary bans? Type a number >0 : " _maxtopermanent
-		if [ -z "$_maxtopermanent" ] || ! isposint "$_maxtopermanent" ; then
-			echo "ERROR: Your input: $_ipnotactivetime is not a number greater than 0" 1>&2
-			exit 1
-		fi
-	else
-		echo "No valid max bans to permament value given." 1>&2
-		exit 1
-	fi
-fi
-
-
-
-ufwunban(){
+function ufwunban(){
 local _iptodel _ln
 _iptodel=$1
 for _ln in $(ufw status numbered | (grep "$_iptodel" | awk -F"[][]" '{print $2}'))
 do
-#echo "call from line no: $2 :ufw to delete ip $_iptodel"
 ufw --force delete $_ln
 done
 }
 
-
-
-ufwban(){
+function ufwban(){
 local _iptoadd _savetofile
 _iptoadd=$1
 _savetofile=$2
@@ -133,7 +123,6 @@ fi
 
 if ! ufw status numbered | grep -qE "DENY.*$_iptoadd" ; then
 ufwb insert 1 deny from $_iptoadd to any
-#echo "call from line no: $3 :ufw to add ip $_iptoadd"
 fi
 }
 
@@ -143,20 +132,15 @@ fi
 #echo "_maxtopermanent=$_maxtopermanent"
 #echo "_manualblocklist=$_manualblocklist"
 
-if [ "$_ipnotactivetime" -eq 0 ] ; then
-	_ipnotactivetime=1
-fi
-_ipnotactivetime=$(echo "$_ipnotactivetime*30*24*60*60" | bc)
-
-_permanentbannedlist="$_srcsbinpath/permanent.list"
-rm -f "$_permanentbannedlist"
-_differencelist="$_srcsbinpath/difference.list"
-rm -f "$_differencelist"
+_ipnotactivetime=$(echo "$_ipnotactivetime*24*60*60" | bc)
 _temploc="/tmp/ufw-cleanips"
 _tempcleandb="clean.db"
 mkdir -p "$_temploc"
 _storedir=$(dirname $_dbfile)
+singletonefile "${_dbfile}.lock" 20 3
+echo "$$" > "${_dbfile}.lock"
 cp -f "$_dbfile" "${_dbfile}.bak"
+rm -f "${_dbfile}.lock"
 
 while read _ipline           
 do   
@@ -166,7 +150,7 @@ if [ ! -z "$_ipline" ] ; then
 		_disabled="#"
 		_ipline="${_ipline:1}"
 	fi
-	#unset _cparts
+	
 	strtoarry "$_ipline" "_cparts" '|' 
 	if [ ${#_cparts[@]} -gt 0 ] && isvalidip4 "${_cparts[0]}"  ; then
 		if [ -z "${_cparts[1]}" ] || ! isposint "${_cparts[1]}" ; then
@@ -175,79 +159,85 @@ if [ ! -z "$_ipline" ] ; then
 		if [ "${_cparts[1]}" -eq 0 ] ; then
 			_cparts[1]=1
 		fi
-
-		if [ "${_cparts[1]}" -ge "$_maxtopermanent" ] ; then
-			if [ ! -z "$_disabled" ] ; then
-				if [ -z "${_cparts[2]}" ] ; then
-					echo "$_disabled${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
-				else
-					echo "$_disabled${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
-				fi
-				ufwunban "${_cparts[0]}" 177
-				continue
-			fi
-
-			if _tinuts=$(date -d "${_cparts[2]}" +%s) && [ $(echo "$(date +%s) - $_tinuts" | bc) -ge "$_ipnotactivetime" ] ; then
-					echo "#${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
-					ufwunban "${_cparts[0]}" 166
-			else
-				if [ -z "${_cparts[2]}" ] ; then
-					echo "${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
-				else
-					echo "${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
-				fi
-				ufwban "${_cparts[0]}" "$_permanentbannedlist" 190
-				
-			fi
-			continue	
-		fi
-		 
-		if [ "${_cparts[1]}" -ge "$_cleanipwithban" ] ; then
-			if [ ! -z "$_disabled" ] ; then
-				if [ -z "${_cparts[2]}" ] ; then
-					echo "$_disabled${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
-				else
-					echo "$_disabled${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
-				fi
-				ufwunban "${_cparts[0]}" 203
-				continue
-			fi
-
-			if _tinuts=$(date -d "${_cparts[2]}" +%s) && [ $(echo "$(date +%s) - $_tinuts" | bc) -ge "$_ipnotactivetime" ] ; then
-					ufwunban "${_cparts[0]}" 208
-			else
-				if [ -z "${_cparts[2]}" ] ; then
-					echo "${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
-				else
-					echo "${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
-				fi
-			fi
-			continue
-		fi
 		
 		if [ ! -z "$_disabled" ] ; then
-			ufwunban "${_cparts[0]}" 220
+			if [ -z "${_cparts[2]}" ] ; then
+				echo "$_disabled${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
+			else
+				echo "$_disabled${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+			fi
+			ufwunban "${_cparts[0]}"
+			findanddelline "$_permanentbannedlist" "${_cparts[0]}" 0
 			continue
 		fi
-
-		if [ -z "${_cparts[2]}" ] ; then
-			echo "${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
+		 
+		if [ "$_cleanipwithban" -eq 0 ] || [ "${_cparts[1]}" -le "$_cleanipwithban" ] ; then
+			if _tinuts=$(date -d "${_cparts[2]}" +%s) && [ $(echo "$(date +%s) - $_tinuts" | bc) -ge "$_ipnotactivetime" ] ; then
+				ufwunban "${_cparts[0]}"
+				findanddelline "$_permanentbannedlist" "${_cparts[0]}" 0
+				if [ -z "${_cparts[2]}" ] ; then
+					echo "#${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
+				else
+					echo "#${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+				fi
+			else
+				if [ -z "${_cparts[2]}" ] ; then
+					echo "${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
+				else
+					echo "${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+				fi
+			fi
+			continue
 		else
-			echo "${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+			if [ -z "${_cparts[2]}" ] ; then
+				echo "${_cparts[0]}|${_cparts[1]}|$(date)" >> "$_temploc/$_tempcleandb"
+			else
+				echo "${_cparts[0]}|${_cparts[1]}|${_cparts[2]}" >> "$_temploc/$_tempcleandb"
+			fi
 		fi
 	fi
 fi      
 done < "${_dbfile}.bak"
 
-
+_tab=$(printf '\t')
 ufw status | grep "DENY" | awk '{print $NF}' > "$_temploc/currbanned"
-while read _ipline
+_alljails=$(fail2ban-client status | grep ' Jail list:' | awk -F: '{print $NF}')
+_alljails=$(trimStr "$_tab" "$_alljails")
+strtoarry "$_alljails" "_uparts" ', '
+for _jail in "${_uparts[@]}"
 do
-if [ ! -z "$_ipline" ] && ! grep -q "$_ipline" "$_permanentbannedlist" ; then
-#grep "$_ipline" "${_dbfile}"
-echo "$_ipline" >> "$_differencelist"
+_ipline=$(fail2ban-client status $_jail | grep ' Banned IP list:' | awk -F: '{print $NF}')
+_ipline=$(trimStr "$_tab" "$_ipline")
+if [ ! -z $_ipline ] ; then
+	strtoarry "$_ipline" "_iplist" ', '
+	for _tip in "${_iplist[@]}"
+	do
+		echo "$_tip" >> "$_temploc/tempbanned"
+	done
 fi
+done
+
+while read _ipl
+do
+	if [ ! -z "$_ipl" ] ; then
+
+		_ipexist=1
+		if grep -q "$_ipl" "$_temploc/tempbanned" ; then
+			_ipexist=0
+		elif [ -f "$_permanentbannedlist" ] && grep -q "$_ipl" "$_permanentbannedlist" ; then
+			_ipexist=0
+		elif [ -f "$_manualblocklist" ] && grep -q "$_ipl" "$_manualblocklist" ; then
+			_ipexist=0
+		fi
+		if [ "$_ipexist" -eq 1 ] ; then
+			ufwunban "$_ipl"
+		fi
+	fi
 done < "$_temploc/currbanned"
+
 echo "$(date)" > "$_storedir/cleanup.run"
+singletonefile "${_dbfile}.lock" 20 2
+echo "$$" > "${_dbfile}.lock"
 mv -f "$_temploc/$_tempcleandb" "$_dbfile"
+rm -f "${_dbfile}.lock"
 rm -rf "$_temploc"

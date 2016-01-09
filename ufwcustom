@@ -37,6 +37,7 @@ _destination="${19}"
 _app="${20}"
 _port="${21}"
 _protocol="${22}"
+_permanentbannedlist="$_srcsbinpath/permanent.list"
 
 declare -a _requiredfiles
 declare -a _requiredexefiles
@@ -85,18 +86,7 @@ function fetchBadips(){
 	fi
 }
 
-
-#if [ ! -f "$_srcsbinpath/ufwcustomconf.conf" ] ; then
-#echo "_maxtopermanent=0" >> "$_srcsbinpath/ufwcustomconf.conf"
-#echo "_bancounttoreport=0" >> "$_srcsbinpath/ufwcustomconf.conf"
-#echo "_ufwbinpath=$(command -v ufw)" >> "$_srcsbinpath/ufwcustomconf.conf"
-#fi
-
-#. "$_srcsbinpath/ufwcustomconf.conf"
-
-#if [ ! -f "$_ufwbinpath" ] ; then
 _ufwbinpath=$(command -v ufw)
-#fi
 
 if [ ! -f "$_dbfile" ] ; then
 mkdir -p "$_storedir"
@@ -189,53 +179,50 @@ if [ "$_action" = "insert" ] ; then
 	fi
 	
 
-	if [ $? -eq 0 ] ; then
-		_ipline=$(grep "$_ip" "$_dbfile")
-		if [ ! -z "$_ipline" ] ; then
-			#_cparts=($(echo "$_ipline" | tr "|" " " ))
-			strtoarry "$_ipline" "_cparts" '|'
-			if [ ${#_cparts[@]} -eq 1 ] ; then
-				singletonefile "${_dbfile}.lock" 20 3
+	_ipline=$(grep "$_ip" "$_dbfile")
+	if [ ! -z "$_ipline" ] ; then
+		strtoarry "$_ipline" "_cparts" '|'
+		if [ ${#_cparts[@]} -eq 1 ] ; then
+			singletonefile "${_dbfile}.lock" 20 2
+			echo "$$" > "${_dbfile}.lock"
+			if [ ! -z "$_ipinblacklist" ] ; then
+				replaceline "$_ip" "$_ip|$((_maxtopermanent+1))|$(date)" "$_dbfile"
+			else
+				replaceline "$_ip" "$_ip|2|$(date)" "$_dbfile"
+			fi
+			rm -f "${_dbfile}.lock"
+		elif [ ${#_cparts[@]} -ge 2 ] ; then
+			_counts=${_cparts[1]}
+			if isposint $_counts ; then
+				_counts=$((_counts+1))
+				singletonefile "${_dbfile}.lock" 20 2
+				echo "$$" > "${_dbfile}.lock"
+				if [ ! -z "$_ipinblacklist" ] ; then
+					replaceline "$_ip" "$_ip|$((_maxtopermanent+_counts))|$(date)" "$_dbfile"
+				else
+					replaceline "$_ip" "$_ip|$_counts|$(date)" "$_dbfile"
+				fi
+				rm -f "${_dbfile}.lock"
+			else
+				singletonefile "${_dbfile}.lock" 20 2
 				echo "$$" > "${_dbfile}.lock"
 				if [ ! -z "$_ipinblacklist" ] ; then
 					replaceline "$_ip" "$_ip|$((_maxtopermanent+1))|$(date)" "$_dbfile"
 				else
 					replaceline "$_ip" "$_ip|2|$(date)" "$_dbfile"
 				fi
-				rm -f "${_dbfile}.lock"
-			elif [ ${#_cparts[@]} -ge 2 ] ; then
-				_counts=${_cparts[1]}
-				if isposint $_counts ; then
-					_counts=$((_counts+1))
-					singletonefile "${_dbfile}.lock" 20 3
-					echo "$$" > "${_dbfile}.lock"
-					if [ ! -z "$_ipinblacklist" ] ; then
-						replaceline "$_ip" "$_ip|$((_maxtopermanent+_counts))|$(date)" "$_dbfile"
-					else
-						replaceline "$_ip" "$_ip|$_counts|$(date)" "$_dbfile"
-					fi
-					rm -f "${_dbfile}.lock"
-				else
-					singletonefile "${_dbfile}.lock" 20 3
-					echo "$$" > "${_dbfile}.lock"
-					if [ ! -z "$_ipinblacklist" ] ; then
-						replaceline "$_ip" "$_ip|$((_maxtopermanent+1))|$(date)" "$_dbfile"
-					else
-						replaceline "$_ip" "$_ip|2|$(date)" "$_dbfile"
-					fi
-					rm -f "${_dbfile}.lock"	
-				fi
-			fi	
-		else
-			singletonefile "${_dbfile}.lock" 20 3
-			echo "$$" > "${_dbfile}.lock"
-			if [ ! -z "$_ipinblacklist" ] ; then
-				echo "$_ip|$_maxtopermanent|$(date)" >> "$_dbfile"
-			else
-				echo "$_ip|1|$(date)" >> "$_dbfile"
+				rm -f "${_dbfile}.lock"	
 			fi
-			rm -f "${_dbfile}.lock"
+		fi	
+	else
+		singletonefile "${_dbfile}.lock" 20 2
+		echo "$$" > "${_dbfile}.lock"
+		if [ ! -z "$_ipinblacklist" ] ; then
+			echo "$_ip|$_maxtopermanent|$(date)" >> "$_dbfile"
+		else
+			echo "$_ip|1|$(date)" >> "$_dbfile"
 		fi
+		rm -f "${_dbfile}.lock"
 	fi
 	
 elif [ "$_action" = "delete" ] ; then
@@ -243,17 +230,20 @@ elif [ "$_action" = "delete" ] ; then
 	
 	if isposint $_maxtopermanent && [ $_maxtopermanent -gt 0 ] ; then
 		if [ -f "$_dbfile" ] ; then
-		singletonefile "${_dbfile}.lock" 20 3
-		echo "$$" > "${_dbfile}.lock"
-		_ipline=$(grep "$_ip" "$_dbfile")
-		rm -f "${_dbfile}.lock"
+			singletonefile "${_dbfile}.lock" 20 2
+			echo "$$" > "${_dbfile}.lock"
+			_ipline=$(grep "$_ip" "$_dbfile")
+			rm -f "${_dbfile}.lock"
 			if [ ! -z "$_ipline" ] ; then
 				if [ ! "${_ipline:0:1}" = "#" ] ; then
-					#_cparts=($(echo "$_ipline" | tr "|" " " ))
 					strtoarry "$_ipline" "_cparts" '|'
 					if [ ${#_cparts[@]} -eq 1 ] ; then
 						if [ "$_maxtopermanent" -eq 1 ] ; then
 							_unban=1
+							singletonefile "${_permanentbannedlist}.lock" 20 2
+							echo "$$" > "${_permanentbannedlist}.lock"
+							echo "$_ip" >> "$_permanentbannedlist"
+							rm -f "${_permanentbannedlist}.lock"
 						fi
 					elif [ ${#_cparts[@]} -ge 2 ] ; then
 						_counts=${_cparts[1]}
@@ -261,10 +251,18 @@ elif [ "$_action" = "delete" ] ; then
 							_counts=$((_counts+1))
 							if [ "$_maxtopermanent" -le "$_counts" ] ; then
 								_unban=1
+								singletonefile "${_permanentbannedlist}.lock" 20 2
+								echo "$$" > "${_permanentbannedlist}.lock"
+								echo "$_ip" >> "$_permanentbannedlist"
+								rm -f "${_permanentbannedlist}.lock"
 							fi
 						else
 							if [ "$_maxtopermanent" -eq 1 ] ; then
 								_unban=1
+								singletonefile "${_permanentbannedlist}.lock" 20 2
+								echo "$$" > "${_permanentbannedlist}.lock"
+								echo "$_ip" >> "$_permanentbannedlist"
+								rm -f "${_permanentbannedlist}.lock"
 							fi
 						fi
 					fi
@@ -274,7 +272,7 @@ elif [ "$_action" = "delete" ] ; then
 	fi
 	
 	if [ "$_unban" -eq 0 ] ; then
-		singletonefile "$_storedir/ufw.lock" 60 3
+		singletonefile "$_storedir/ufw.lock" 60 2
 		echo "$$" > "$_storedir/ufw.lock"
 		if [ ! -z "$_app" ] ; then
 			$_ufwbinpath $_action $_blocktype from $_ip to $_destination$_app
@@ -287,7 +285,6 @@ fi
 
 _cleanupinterval=86400
 if [ ! -f "$_storedir/cleanup.run" ] || [ $(expr $(date +%s) - $(stat -c %Y "$_storedir/cleanup.run")) -gt "$_cleanupinterval" ] ; then
-nohup "$_srcsbinpath/cleanips" "noask" "$_cleanipwithban" "$_ipnotactivetime" "$_maxtopermanent" "$_dbfile" &
+nohup "$_srcsbinpath/cleanips" "noask" "$_cleanipwithban" "$_ipnotactivetime" "$_dbfile" "$_manualblocklist" "$_permanentbannedlist" &
 fi
 
-exit 0
