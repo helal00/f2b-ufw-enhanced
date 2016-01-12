@@ -43,8 +43,6 @@ _cleanipwithban="$1"
 shift
 _ipnotactivetime="$1"
 shift
-_maxtopermanent="$1"
-shift
 _dbfile="$1"
 shift
 _manualblocklist="$1"
